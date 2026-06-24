@@ -306,7 +306,8 @@ body { font-family:var(--font); background:var(--bg); color:var(--text); font-si
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
+// （DOMContentLoadedラッパーを撤去：inline onclick から呼べるよう関数をグローバルに定義する。
+//   このscriptは</body>直前にあるためDOMは既に利用可能）
 
 const SUPABASE_URL = 'https://dxgqrqxwdbgwnstnwhas.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4Z3FycXh3ZGJnd25zdG53aGFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTIzNzcsImV4cCI6MjA5Nzg2ODM3N30.8BsYMv5G8HE4VSeR2qohbTzn1yBHhf9_VQ4H_D2L-0I';
@@ -723,7 +724,7 @@ function taskHTML(t){
 }
 
 // Auth state change handler manages initial render
-}); // end DOMContentLoaded
+// end of app script
 </script>
 
 </body>
