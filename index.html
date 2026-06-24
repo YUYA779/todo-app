@@ -715,11 +715,16 @@ function taskHTML(t){
 // Auth state change handler manages initial render
 }); // end DOMContentLoaded
 
-// PWA: Service Worker 登録（認証フローには影響しない）
+// PWA: 旧Service Workerとキャッシュを完全除去（空白・表示崩れの再発防止）
+// ※ Service Workerは使わず、常にネットワークから最新を読み込む。
+//    ホーム画面インストールは manifest により引き続き可能。
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch((err) => console.warn('SW register failed:', err));
-  });
+  navigator.serviceWorker.getRegistrations()
+    .then((regs) => regs.forEach((r) => r.unregister()))
+    .catch(() => {});
+}
+if (window.caches && caches.keys) {
+  caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
 }
 </script>
 
