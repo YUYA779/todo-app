@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Todo</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+:root {
+  --bg:#f5f4f0; --surface:#fff; --surface2:#f0efe9;
+  --border:#e2e0d8; --text:#1a1a18; --muted:#8a8878;
+  --accent:#3d5a99; --accent-light:#eef1f8;
+  --high:#c0392b; --high-light:#fdf0ee;
+  --done:#a0a090; --today-bg:#3d5a99;
+  --range-bg:#dce8ff;
+  --font:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;
+  --radius:8px;
+}
+body { font-family:var(--font); background:var(--bg); color:var(--text); font-size:14px; }
+
+.app { display:grid; grid-template-columns:220px 1fr 300px; grid-template-rows:48px 1fr; height:100vh; max-width:1200px; margin:0 auto; }
+.app-header { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; padding:0 1.25rem; background:var(--surface); border-bottom:1px solid var(--border); }
+.app-header h1 { font-size:.95rem; font-weight:700; }
+.header-date { font-size:.75rem; color:var(--muted); }
+
+.pane-left   { background:var(--surface); border-right:1px solid var(--border); overflow-y:auto; display:flex; flex-direction:column; }
+.pane-center { overflow-y:auto; padding:.85rem; }
+.pane-right  { background:var(--surface); border-left:1px solid var(--border); overflow-y:auto; display:flex; flex-direction:column; }
+
+/* LEFT */
+.pane-label   { font-size:.67rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:.85rem 1rem .35rem; flex-shrink:0; }
+.left-divider { height:1px; background:var(--border); margin:.4rem 0; flex-shrink:0; }
+.left-empty   { padding:.4rem 1rem .6rem; font-size:.78rem; color:var(--muted); }
+.left-item { display:flex; align-items:center; gap:.5rem; padding:.45rem .75rem .45rem 1rem; border-left:3px solid transparent; flex-shrink:0; transition:background .1s; }
+.left-item.overdue:hover { background:#fff5f5; }
+.left-item:not(.overdue):hover { background:var(--surface2); }
+.left-item.ph { border-left-color:var(--high); }
+.left-item.reschedule-mode { background:#fff8e1; border-left-color:#f39c12 !important; }
+.item-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.dot-overdue { background:var(--high); }
+.dot-todo    { background:var(--muted); }
+.item-body { flex:1; min-width:0; }
+.item-text { font-size:.8rem; line-height:1.3; word-break:break-word; }
+.item-text.overdue-text { color:var(--high); }
+.item-hint { font-size:.67rem; color:var(--muted); margin-top:1px; }
+.item-acts { display:flex; gap:3px; flex-shrink:0; }
+.oi-btn { width:24px; height:24px; border:1px solid var(--border); border-radius:4px; background:var(--surface2); cursor:pointer; font-size:.72rem; display:flex; align-items:center; justify-content:center; color:var(--muted); transition:all .12s; }
+.oi-btn.done-btn:hover { background:#e8f8ee; color:#27ae60; border-color:#27ae60; }
+.oi-btn.cal-btn:hover  { background:var(--accent-light); color:var(--accent); border-color:var(--accent); }
+.oi-btn.active { background:#fff8e1; color:#d68910; border-color:#f39c12; }
+
+/* CALENDAR */
+.cal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:.7rem; }
+.cal-title  { font-size:.95rem; font-weight:700; }
+.cal-nav    { display:flex; gap:.3rem; }
+.btn-nav    { width:26px; height:26px; background:var(--surface); border:1px solid var(--border); border-radius:5px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:.9rem; transition:background .1s; }
+.btn-nav:hover { background:var(--surface2); }
+
+.cal-mode-banner { background:#fff8e1; border:1px solid #f0d080; border-radius:6px; padding:.45rem .75rem; margin-bottom:.6rem; font-size:.78rem; color:#9a6c00; display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+.cal-mode-banner.hidden { display:none; }
+.cal-mode-banner span { flex:1; }
+.cal-mode-banner button { background:none; border:none; font-size:.75rem; color:#9a6c00; cursor:pointer; text-decoration:underline; font-family:var(--font); white-space:nowrap; }
+
+.cal-grid { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.cal-weekdays { display:grid; grid-template-columns:repeat(7,1fr); background:var(--surface2); border-bottom:1px solid var(--border); }
+.cal-wd { text-align:center; padding:.45rem 0; font-size:.7rem; font-weight:700; color:var(--muted); }
+.cal-wd.sun { color:#c0392b; } .cal-wd.sat { color:#2980b9; }
+
+.cal-days { display:grid; grid-template-columns:repeat(7,1fr); }
+.cal-day { height:72px; padding:.28rem .32rem; border-right:1px solid var(--border); border-bottom:1px solid var(--border); cursor:pointer; transition:background .1s; overflow:hidden; position:relative; }
+.cal-day:nth-child(7n) { border-right:none; }
+.cal-day:hover { background:var(--accent-light); }
+.cal-day.other-month { background:var(--bg); }
+.cal-day.other-month .dn { color:#ccc !important; }
+.cal-day.selected  { background:var(--accent-light); }
+.cal-day.in-range  { background:var(--range-bg); }
+.cal-day.range-start, .cal-day.range-end { background:var(--accent); }
+.cal-day.range-start .dn, .cal-day.range-end .dn { color:#fff !important; }
+.cal-day.reschedule-target:not(.other-month) { background:#fffbeb; }
+.cal-day.is-today .dn { background:var(--today-bg); color:#fff !important; border-radius:50%; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; }
+.cal-day.range-start .dn, .cal-day.range-end .dn { background:rgba(255,255,255,.25) !important; border-radius:50%; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; }
+.cal-day.sun .dn { color:#c0392b; } .cal-day.sat .dn { color:#2980b9; }
+.dn { font-size:.75rem; font-weight:600; line-height:1; margin-bottom:.18rem; display:block; }
+.day-chips { display:flex; flex-direction:column; gap:2px; }
+.chip { font-size:.6rem; line-height:1.2; padding:1px 3px; border-radius:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.chip-h { background:var(--high-light); color:var(--high); }
+.chip-l { background:var(--accent-light); color:var(--accent); }
+.chip-d { background:#f0f0ec; color:var(--done); text-decoration:line-through; }
+.chip-r { border-left:2px solid #f39c12; }
+.chip-range { background:#dce8ff; color:var(--accent); border-left:2px solid var(--accent); }
+.chip-more { font-size:.58rem; color:var(--muted); }
+
+/* RIGHT */
+.detail-head  { padding:.8rem 1rem .55rem; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface); z-index:1; flex-shrink:0; }
+.detail-dlabel { font-size:.9rem; font-weight:700; }
+.detail-sub   { font-size:.7rem; color:var(--muted); margin-top:2px; }
+.add-form  { padding:.65rem 1rem; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:.4rem; flex-shrink:0; }
+.add-input { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:.48rem .65rem; font-size:.85rem; font-family:var(--font); outline:none; transition:border-color .15s; }
+.add-input:focus { border-color:var(--accent); background:#fff; }
+.add-input::placeholder { color:var(--muted); }
+.date-mode-label { font-size:.72rem; color:var(--muted); }
+.date-mode-label span { color:var(--accent); font-weight:600; }
+.form-row2 { display:flex; gap:.35rem; align-items:center; flex-wrap:wrap; }
+.prio-toggle { display:flex; background:var(--surface2); border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+.prio-toggle button { flex:1; border:none; background:none; color:var(--muted); padding:.33rem .45rem; font-size:.72rem; cursor:pointer; font-family:var(--font); white-space:nowrap; transition:all .12s; }
+.prio-toggle button.ah { background:var(--high-light); color:var(--high); font-weight:700; }
+.prio-toggle button.al { background:var(--accent-light); color:var(--accent); font-weight:700; }
+.todo-toggle { border:1px solid var(--border); background:var(--surface2); border-radius:6px; color:var(--muted); padding:.33rem .55rem; font-size:.72rem; cursor:pointer; font-family:var(--font); transition:all .12s; white-space:nowrap; }
+.todo-toggle.active { border-color:var(--muted); color:var(--text); font-weight:700; background:#e8e8e4; }
+.repeat-select { background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--text); padding:.33rem .4rem; font-size:.72rem; font-family:var(--font); outline:none; cursor:pointer; flex:1; min-width:0; }
+.btn-add { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:.33rem .75rem; font-size:.82rem; font-weight:700; cursor:pointer; font-family:var(--font); white-space:nowrap; transition:opacity .15s; }
+.btn-add:hover { opacity:.85; }
+
+.sec-label  { font-size:.65rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:.65rem 1rem .2rem; flex-shrink:0; }
+.task-item  { display:flex; align-items:flex-start; gap:.55rem; padding:.5rem 1rem; border-left:3px solid transparent; transition:background .1s; flex-shrink:0; cursor:pointer; }
+.task-item:hover { background:var(--surface2); }
+.task-item:hover .task-acts { opacity:1; }
+.task-item.ph   { border-left-color:var(--high); }
+.task-item.pl   { border-left-color:var(--accent); }
+.task-item.done { border-left-color:var(--border); opacity:.55; }
+.task-item.sel  { background:var(--accent-light) !important; }
+.task-check { width:17px; height:17px; border-radius:50%; border:2px solid var(--border); flex-shrink:0; cursor:pointer; display:flex; align-items:center; justify-content:center; margin-top:1px; transition:all .15s; }
+.task-check:hover { border-color:var(--accent); }
+.task-item.done .task-check { background:var(--done); border-color:var(--done); }
+.chk-svg { display:none; }
+.task-item.done .chk-svg { display:block; }
+.task-body { flex:1; min-width:0; }
+.task-text { font-size:.85rem; line-height:1.4; word-break:break-word; }
+.task-item.done .task-text { text-decoration:line-through; color:var(--done); }
+.task-note-prev { font-size:.72rem; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.task-meta { display:flex; gap:.3rem; margin-top:3px; flex-wrap:wrap; align-items:center; }
+.task-badge { font-size:.63rem; padding:1px 5px; border-radius:3px; }
+.bh { background:var(--high-light); color:var(--high); }
+.bl { background:var(--accent-light); color:var(--accent); }
+.repeat-badge { font-size:.63rem; padding:1px 5px; border-radius:3px; background:#fff8e7; color:#d68910; border:1px solid #f0d080; }
+.range-badge  { font-size:.63rem; padding:1px 5px; border-radius:3px; background:var(--range-bg); color:var(--accent); }
+.task-acts  { display:flex; gap:.2rem; opacity:0; transition:opacity .12s; margin-top:1px; }
+.btn-act    { width:22px; height:22px; background:none; border:1px solid var(--border); border-radius:4px; cursor:pointer; font-size:.7rem; display:flex; align-items:center; justify-content:center; color:var(--muted); transition:all .12s; }
+.btn-act:hover     { background:var(--surface2); color:var(--text); }
+.btn-act.del:hover { background:var(--high-light); color:var(--high); border-color:var(--high); }
+.btn-act.rs-active { background:#fff8e1; color:#d68910; border-color:#f39c12; }
+.detail-empty { padding:2rem 1rem; text-align:center; color:var(--muted); font-size:.82rem; }
+
+/* MODALS */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:100; padding:1rem; }
+.modal-overlay.hidden { display:none; }
+.modal-box { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:1.4rem; width:100%; max-width:360px; box-shadow:0 8px 32px rgba(0,0,0,.14); }
+.modal-box h3 { font-size:.92rem; margin-bottom:.3rem; }
+.modal-task   { font-size:.8rem; color:var(--muted); margin-bottom:1rem; word-break:break-word; }
+.scope-opts   { display:flex; flex-direction:column; gap:.5rem; }
+.scope-btn    { background:var(--surface2); border:1px solid var(--border); border-radius:7px; padding:.6rem .8rem; cursor:pointer; font-family:var(--font); font-size:.85rem; text-align:left; transition:all .12s; }
+.scope-btn:hover { border-color:var(--accent); background:var(--accent-light); color:var(--accent); }
+.scope-btn small { display:block; font-size:.7rem; color:var(--muted); margin-top:2px; }
+.modal-acts { display:flex; justify-content:flex-end; gap:.5rem; margin-top:1rem; }
+.btn-cancel { background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--muted); padding:.45rem .9rem; font-size:.83rem; cursor:pointer; font-family:var(--font); }
+.btn-save   { background:var(--accent); border:none; border-radius:6px; color:#fff; padding:.45rem .9rem; font-size:.83rem; font-weight:700; cursor:pointer; font-family:var(--font); }
+.btn-save:hover { opacity:.85; }
+.modal-field { margin-bottom:.75rem; }
+.modal-field label { font-size:.75rem; color:var(--muted); display:block; margin-bottom:.3rem; }
+.modal-field input, .modal-field textarea, .modal-field select {
+  width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:6px;
+  color:var(--text); padding:.5rem .65rem; font-size:.85rem; font-family:var(--font); outline:none;
+}
+.modal-field input:focus, .modal-field textarea:focus { border-color:var(--accent); background:#fff; }
+.modal-field textarea { resize:vertical; min-height:80px; line-height:1.6; }
+.date-range-row { display:flex; gap:.5rem; align-items:center; }
+.date-range-row span { font-size:.8rem; color:var(--muted); }
+.date-range-row input { flex:1; }
+
+@media (max-width:700px) {
+  html,body { overflow:auto; }
+  .app { grid-template-columns:1fr; grid-template-rows:48px auto auto auto; height:auto; }
+  .pane-left { max-height:200px; border-right:none; border-bottom:1px solid var(--border); }
+  .pane-right { border-left:none; }
+  .cal-day { height:54px; }
+}
+
+/* AUTH */
+#auth-screen { position:fixed; inset:0; background:var(--bg); display:flex; align-items:center; justify-content:center; z-index:200; }
+#auth-screen.hidden { display:none; }
+.auth-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:2.5rem 2rem; width:100%; max-width:360px; text-align:center; box-shadow:0 4px 24px rgba(0,0,0,.08); }
+.auth-card h1 { font-size:1.5rem; font-weight:700; margin-bottom:.5rem; }
+.auth-card p { color:var(--muted); font-size:.88rem; margin-bottom:2rem; }
+.btn-google { display:flex; align-items:center; justify-content:center; gap:.6rem; width:100%; padding:.85rem; background:#fff; border:1px solid var(--border); border-radius:var(--radius); font-size:.92rem; font-weight:600; cursor:pointer; font-family:var(--font); transition:box-shadow .2s; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+.btn-google:hover { box-shadow:0 2px 8px rgba(0,0,0,.15); }
+</style>
+</head>
+<body>
+<!-- AUTH -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <h1>📋 Todo</h1>
+    <p>Googleアカウントでログインして<br>どこからでも同期できます</p>
+    <button class="btn-google" id="google-login-btn">
+      <svg width="20" height="20" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      Googleでログイン
+    </button>
+  </div>
+</div>
+
+<div class="app" id="app" style="display:none">
+  <header class="app-header">
+    <h1>📋 Todo デモ</h1>
+    <span class="header-date" id="header-date"></span>
+  </header>
+  <aside class="pane-left" id="pane-left"></aside>
+  <main class="pane-center">
+    <div class="cal-header">
+      <span class="cal-title" id="cal-title"></span>
+      <div class="cal-nav">
+        <button class="btn-nav" onclick="changeMonth(-1)">‹</button>
+        <button class="btn-nav" onclick="changeMonth(1)">›</button>
+      </div>
+    </div>
+    <div class="cal-mode-banner hidden" id="cal-banner">
+      <span id="cal-banner-text"></span>
+      <button onclick="cancelCalMode()">キャンセル</button>
+    </div>
+    <div class="cal-grid">
+      <div class="cal-weekdays">
+        <div class="cal-wd sun">日</div><div class="cal-wd">月</div><div class="cal-wd">火</div>
+        <div class="cal-wd">水</div><div class="cal-wd">木</div><div class="cal-wd">金</div><div class="cal-wd sat">土</div>
+      </div>
+      <div class="cal-days" id="cal-days"></div>
+    </div>
+  </main>
+  <aside class="pane-right" id="pane-right"></aside>
+</div>
+
+<!-- スコープ選択 -->
+<div class="modal-overlay hidden" id="modal-scope">
+  <div class="modal-box">
+    <h3>🔁 どの範囲を変更しますか？</h3>
+    <div class="modal-task" id="scope-task-name"></div>
+    <div class="scope-opts">
+      <button class="scope-btn" onclick="applyScope('one')">この1件だけ変更<small>他の繰り返しには影響しません</small></button>
+      <button class="scope-btn" onclick="applyScope('all')">すべての繰り返しを変更<small>同じルーティンの全件に適用されます</small></button>
+    </div>
+    <div class="modal-acts"><button class="btn-cancel" onclick="closeScope()">キャンセル</button></div>
+  </div>
+</div>
+
+<!-- 詳細ポップアップ -->
+<div class="modal-overlay hidden" id="modal-detail">
+  <div class="modal-box" style="max-width:420px;">
+    <h3 id="detail-modal-title" style="margin-bottom:1rem;">📝 タスク詳細</h3>
+    <div class="modal-field">
+      <label>タスク名</label>
+      <input type="text" id="detail-title" placeholder="タスク名" />
+    </div>
+    <div class="modal-field">
+      <label>日程</label>
+      <div class="date-range-row">
+        <input type="date" id="detail-start" />
+        <span>〜</span>
+        <input type="date" id="detail-end" placeholder="終了日（任意）" />
+      </div>
+    </div>
+    <div class="modal-field">
+      <label>優先度</label>
+      <select id="detail-priority">
+        <option value="high">🔴 高</option>
+        <option value="low">🔵 低</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label>繰り返し</label>
+      <select id="detail-repeat">
+        <option value="none">繰り返しなし</option>
+        <option value="daily">毎日</option>
+        <option value="weekly">毎週</option>
+        <option value="monthly">毎月</option>
+        <option value="yearly">毎年</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label>メモ・詳細</label>
+      <textarea id="detail-note" placeholder="詳細・メモを入力..."></textarea>
+    </div>
+    <div class="modal-acts">
+      <button class="btn-cancel" onclick="closeDetail()">キャンセル</button>
+      <button class="btn-save" onclick="saveDetail()">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+const SUPABASE_URL = 'https://dxgqrqxwdbgwnstnwhas.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR4Z3FycXh3ZGJnd25zdG53aGFzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyOTIzNzcsImV4cCI6MjA5Nzg2ODM3N30.8BsYMv5G8HE4VSeR2qohbTzn1yBHhf9_VQ4H_D2L-0I';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let currentUser = null;
+
+document.getElementById('google-login-btn').addEventListener('click', function() {
+  sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.href } });
+});
+
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (session) {
+    currentUser = session.user;
+    document.getElementById('auth-screen').classList.add('hidden');
+    document.getElementById('app').style.display = 'grid';
+    await fetchTasks();
+    render();
+  } else {
+    document.getElementById('auth-screen').classList.remove('hidden');
+    document.getElementById('app').style.display = 'none';
+  }
+});
+
+function localDateStr(dt) {
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+const TODAY = localDateStr(new Date());
+let viewYear  = new Date().getFullYear();
+let viewMonth = new Date().getMonth();
+let selectedDate = TODAY;
+let selPriority  = 'low';
+let selRepeat    = 'none';
+let addAsTodo    = false;
+let calMode      = 'normal'; // 'normal' | 'reschedule' | 'range-start' | 'range-end'
+let calModeId    = null;
+let rangePickStep = 0; // 0=idle, 1=picking start, 2=picking end
+let rangeTempStart = null;
+let editingTaskId  = null;
+let scopePendingFn = null;
+
+// ── SUPABASE ───────────────────────────────────────────
+window._sb = sb;
+let tasks = [];
+
+async function fetchTasks() {
+  const { data } = await sb.from('todos').select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false });
+  tasks = (data||[]).map(r => ({
+    id: r.id, text: r.text, due: r.due_date, end: r.end_date,
+    priority: r.priority, done: r.status==='done',
+    repeat: r.repeat||'none', repeatId: r.repeat_id, note: r.note||'',
+  }));
+}
+
+async function dbInsert(t) {
+  await sb.from('todos').insert({
+    id: t.id, user_id: currentUser.id, text: t.text,
+    due_date: t.due, end_date: t.end, priority: t.priority,
+    status: t.done?'done':'active', repeat: t.repeat, repeat_id: t.repeatId, note: t.note,
+  });
+}
+async function dbUpdate(t) {
+  await sb.from('todos').update({
+    text: t.text, due_date: t.due, end_date: t.end, priority: t.priority,
+    status: t.done?'done':'active', repeat: t.repeat, repeat_id: t.repeatId, note: t.note,
+  }).eq('id', t.id);
+}
+async function dbDelete(id) { await sb.from('todos').delete().eq('id', id); }
+async function dbDeleteByRepeatId(rid) { await sb.from('todos').delete().eq('repeat_id', rid); }
+function save() {} // no-op, DB handles persistence
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function isOverdue(t) { return !t.done && t.due && t.due < TODAY && !(t.end && t.end >= TODAY); }
+function isTodo(t) { return !t.done && !t.due; }
+function taskOnDate(t, str) {
+  if (!t.due) return false;
+  if (t.end) return str >= t.due && str <= t.end;
+  return t.due === str;
+}
+function dateLabel(str) {
+  if (!str) return '未設定';
+  const d=new Date(str+'T00:00:00'), days=['日','月','火','水','木','金','土'];
+  const m=d.getMonth()+1, day=d.getDate(), dow=days[d.getDay()];
+  if (str===TODAY) return `今日 ${m}/${day}（${dow}）`;
+  const diff=Math.round((d-new Date(TODAY+'T00:00:00'))/86400000);
+  if (diff===1) return `明日 ${m}/${day}（${dow}）`;
+  return `${m}月${day}日（${dow}）`;
+}
+function repeatLabel(r) { return {none:'',daily:'毎日',weekly:'毎週',monthly:'毎月',yearly:'毎年'}[r]||''; }
+function nextDue(due, repeat) {
+  const [y,mo,da]=due.split('-').map(Number); let nd;
+  if(repeat==='daily')   nd=new Date(y,mo-1,da+1);
+  if(repeat==='weekly')  nd=new Date(y,mo-1,da+7);
+  if(repeat==='monthly') nd=new Date(y,mo,da);
+  if(repeat==='yearly')  nd=new Date(y+1,mo-1,da);
+  return `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}-${String(nd.getDate()).padStart(2,'0')}`;
+}
+
+// ── ADD ────────────────────────────────────────────────
+async function addTask() {
+  const inp=document.getElementById('add-input'); if(!inp) return;
+  const text=inp.value.trim(); if(!text){inp.focus();return;}
+  const rs=document.getElementById('repeat-sel');
+  const rep=rs?rs.value:'none';
+  const due=addAsTodo?null:selectedDate;
+  const repeatId=(rep!=='none'&&due)?'r'+Date.now():null;
+  const newTask = {id:crypto.randomUUID(), text, due, end:null, priority:selPriority, done:false, repeat:rep, repeatId, note:''};
+  tasks.unshift(newTask);
+  await dbInsert(newTask);
+  if(rep!=='none'&&due){
+    let cur=due;
+    for(let i=0;i<3;i++){
+      cur=nextDue(cur,rep);
+      const rt={id:crypto.randomUUID(), text, due:cur, end:null, priority:selPriority, done:false, repeat:rep, repeatId, note:''};
+      tasks.unshift(rt);
+      await dbInsert(rt);
+    }
+  }
+  inp.value=''; render();
+  document.getElementById('add-input').focus();
+}
+
+async function toggleDone(id,e) {
+  if(e) e.stopPropagation();
+  const t=tasks.find(t=>t.id===id); if(!t) return;
+  t.done=!t.done; await dbUpdate(t); render();
+}
+
+async function deleteTask(id,e) {
+  if(e) e.stopPropagation();
+  const t=tasks.find(t=>t.id===id); if(!t) return;
+  if(t.repeatId){
+    scopePendingFn=async(scope)=>{
+      if(scope==='one'){ tasks=tasks.filter(x=>x.id!==id); await dbDelete(id); }
+      else { await dbDeleteByRepeatId(t.repeatId); tasks=tasks.filter(x=>x.repeatId!==t.repeatId); }
+      save(); render();
+    };
+    document.getElementById('scope-task-name').textContent=t.text;
+    document.getElementById('modal-scope').classList.remove('hidden');
+  } else { tasks=tasks.filter(x=>x.id!==id); await dbDelete(id); render(); }
+}
+
+// ── RESCHEDULE via calendar ────────────────────────────
+function startReschedule(id,e) {
+  if(e) e.stopPropagation();
+  if(calMode==='reschedule'&&calModeId===id){cancelCalMode();return;}
+  calMode='reschedule'; calModeId=id; rangePickStep=0; rangeTempStart=null;
+  const t=tasks.find(t=>t.id===id);
+  showBanner(`📅「${t.text}」— 開始日をカレンダーから選択`);
+  renderCalendar(); renderLeft(); renderRight();
+}
+function cancelCalMode(){
+  calMode='normal'; calModeId=null; rangePickStep=0; rangeTempStart=null;
+  document.getElementById('cal-banner').classList.add('hidden');
+  renderCalendar(); renderLeft(); renderRight();
+}
+function showBanner(txt){
+  const b=document.getElementById('cal-banner');
+  b.classList.remove('hidden');
+  document.getElementById('cal-banner-text').textContent=txt;
+}
+
+// ── CALENDAR CLICK ─────────────────────────────────────
+function onCalendarClick(str) {
+  if(calMode==='reschedule'){
+    if(rangePickStep===0){
+      // first click = start date
+      rangeTempStart=str; rangePickStep=1;
+      showBanner(`📅 開始：${str} — 終了日を選択（同じ日=1日）`);
+      renderCalendar();
+    } else {
+      // second click = end date (or same = single day)
+      const start=rangeTempStart<=str?rangeTempStart:str;
+      const end  =rangeTempStart<=str?str:rangeTempStart;
+      const endVal=start===end?null:end;
+      const t=tasks.find(t=>t.id===calModeId); if(!t){cancelCalMode();return;}
+      const applyChange=(scope)=>{
+        if(scope==='one'||!t.repeatId){
+          t.due=start; t.end=endVal; t.done=false;
+        } else {
+          tasks.filter(x=>x.repeatId===t.repeatId).forEach(x=>{x.due=start;x.end=endVal;x.done=false;});
+        }
+        save(); selectedDate=start;
+        const d=new Date(start+'T00:00:00'); viewYear=d.getFullYear(); viewMonth=d.getMonth();
+        // update DB for changed tasks
+        tasks.filter(x => x.due === start || (t.repeatId && x.repeatId === t.repeatId)).forEach(x => dbUpdate(x));
+        cancelCalMode();
+      };
+      if(t.repeatId){
+        scopePendingFn=applyChange;
+        document.getElementById('scope-task-name').textContent=t.text;
+        document.getElementById('modal-scope').classList.remove('hidden');
+      } else { applyChange('one'); }
+    }
+  } else {
+    selectedDate=str; addAsTodo=false;
+    renderCalendar(); renderRight();
+  }
+}
+function changeMonth(dir){
+  viewMonth+=dir;
+  if(viewMonth<0){viewMonth=11;viewYear--;} if(viewMonth>11){viewMonth=0;viewYear++;}
+  renderCalendar();
+}
+
+// ── DETAIL POPUP ───────────────────────────────────────
+function openDetail(id,e) {
+  if(e) e.stopPropagation();
+  editingTaskId=id;
+  const t=tasks.find(t=>t.id===id); if(!t) return;
+  document.getElementById('detail-title').value=t.text;
+  document.getElementById('detail-start').value=t.due||'';
+  document.getElementById('detail-end').value=t.end||'';
+  document.getElementById('detail-priority').value=t.priority;
+  document.getElementById('detail-repeat').value=t.repeat||'none';
+  document.getElementById('detail-note').value=t.note||'';
+  document.getElementById('modal-detail').classList.remove('hidden');
+}
+function closeDetail(){
+  document.getElementById('modal-detail').classList.add('hidden');
+  editingTaskId=null;
+}
+async function saveDetail(){
+  const t=tasks.find(t=>t.id===editingTaskId); if(!t){closeDetail();return;}
+  const title=document.getElementById('detail-title').value.trim();
+  const start=document.getElementById('detail-start').value||null;
+  const end  =document.getElementById('detail-end').value||null;
+  if(title) t.text=title;
+  t.due=start; t.end=(end&&end!==start)?end:null;
+  t.priority=document.getElementById('detail-priority').value;
+  t.repeat=document.getElementById('detail-repeat').value;
+  t.note=document.getElementById('detail-note').value;
+  await dbUpdate(t); closeDetail(); render();
+}
+document.getElementById('modal-detail').addEventListener('click',e=>{
+  if(e.target===document.getElementById('modal-detail')) closeDetail();
+});
+
+// ── SCOPE ──────────────────────────────────────────────
+function applyScope(scope){ if(scopePendingFn) scopePendingFn(scope); closeScope(); }
+function closeScope(){ document.getElementById('modal-scope').classList.add('hidden'); scopePendingFn=null; }
+document.getElementById('modal-scope').addEventListener('click',e=>{
+  if(e.target===document.getElementById('modal-scope')) closeScope();
+});
+
+// ── PRIORITY / TODO / REPEAT ───────────────────────────
+function setPrio(p){
+  selPriority=p;
+  const bh=document.getElementById('btn-h'),bl=document.getElementById('btn-l');
+  if(bh)bh.className=p==='high'?'ah':''; if(bl)bl.className=p==='low'?'al':'';
+}
+function toggleTodo(){ addAsTodo=!addAsTodo; renderRight(); }
+
+// ── RENDER ─────────────────────────────────────────────
+function render(){
+  const now=new Date(), days=['日','月','火','水','木','金','土'];
+  document.getElementById('header-date').textContent=`${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日（${days[now.getDay()]}）`;
+  renderLeft(); renderCalendar(); renderRight();
+}
+
+// LEFT
+function renderLeft(){
+  const overdue=tasks.filter(isOverdue).sort((a,b)=>(a.priority==='high'&&b.priority!=='high')?-1:(b.priority==='high'&&a.priority!=='high')?1:a.due.localeCompare(b.due));
+  const todos=tasks.filter(isTodo);
+  let h=`<div class="pane-label">未消化 (${overdue.length})</div>`;
+  if(!overdue.length) h+=`<div class="left-empty">未消化タスクはありません</div>`;
+  else for(const t of overdue){
+    const d=new Date(t.due+'T00:00:00'), ds=`${d.getMonth()+1}/${d.getDate()} 期限切れ`;
+    const isRS=calMode==='reschedule'&&calModeId===t.id;
+    h+=`<div class="left-item overdue ${t.priority==='high'?'ph':''} ${isRS?'reschedule-mode':''}">
+      <div class="item-dot dot-overdue"></div>
+      <div class="item-body"><div class="item-text overdue-text">${esc(t.text)}</div><div class="item-hint">${ds}</div></div>
+      <div class="item-acts">
+        <button class="oi-btn done-btn" onclick="toggleDone('${t.id}',event)">✓</button>
+        <button class="oi-btn cal-btn ${isRS?'active':''}" onclick="startReschedule('${t.id}',event)">📅</button>
+      </div>
+    </div>`;
+  }
+  h+=`<div class="left-divider"></div><div class="pane-label">Todo (${todos.length})</div>`;
+  if(!todos.length) h+=`<div class="left-empty">Todoはありません</div>`;
+  else for(const t of todos){
+    const isRS=calMode==='reschedule'&&calModeId===t.id;
+    h+=`<div class="left-item ${isRS?'reschedule-mode':''}">
+      <div class="item-dot dot-todo"></div>
+      <div class="item-body"><div class="item-text">${esc(t.text)}</div></div>
+      <div class="item-acts">
+        <button class="oi-btn done-btn" onclick="toggleDone('${t.id}',event)">✓</button>
+        <button class="oi-btn cal-btn ${isRS?'active':''}" onclick="startReschedule('${t.id}',event)">📅</button>
+      </div>
+    </div>`;
+  }
+  document.getElementById('pane-left').innerHTML=h;
+}
+
+// CALENDAR
+function renderCalendar(){
+  const months=['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  document.getElementById('cal-title').textContent=`${viewYear}年 ${months[viewMonth]}`;
+  const first=new Date(viewYear,viewMonth,1), last=new Date(viewYear,viewMonth+1,0), startDow=first.getDay();
+  // build date→tasks map
+  const tmap={};
+  for(const t of tasks){
+    if(!t.due) continue;
+    const addTo=(str)=>{ if(!tmap[str])tmap[str]=[]; tmap[str].push(t); };
+    if(t.end){
+      let cur=new Date(t.due+'T00:00:00'), endD=new Date(t.end+'T00:00:00');
+      while(cur<=endD){ addTo(localDateStr(cur)); cur.setDate(cur.getDate()+1); }
+    } else { addTo(t.due); }
+  }
+  let h='', count=0;
+  for(let i=0;i<startDow;i++){h+=dayCell(new Date(viewYear,viewMonth,1-(startDow-i)),true,tmap);count++;}
+  for(let d=1;d<=last.getDate();d++){h+=dayCell(new Date(viewYear,viewMonth,d),false,tmap);count++;}
+  const rem=7-(count%7); if(rem<7)for(let i=1;i<=rem;i++)h+=dayCell(new Date(viewYear,viewMonth+1,i),true,tmap);
+  document.getElementById('cal-days').innerHTML=h;
+}
+function dayCell(dt,other,tmap){
+  const str=localDateStr(dt), dow=dt.getDay();
+  const isToday=str===TODAY, isSel=str===selectedDate&&calMode==='normal';
+  const dayT=(tmap[str]||[]).slice().sort((a,b)=>a.priority==='high'&&b.priority!=='high'?-1:b.priority==='high'&&a.priority!=='high'?1:0);
+  // range highlight for reschedule picking
+  let isRangeStart=false, isRangeEnd=false, isInRange=false;
+  if(calMode==='reschedule'&&rangePickStep===1&&rangeTempStart){
+    if(str===rangeTempStart) isRangeStart=true;
+  }
+  let cls='cal-day';
+  if(other) cls+=' other-month';
+  if(isToday&&!isRangeStart&&!isRangeEnd) cls+=' is-today';
+  if(isSel) cls+=' selected';
+  if(calMode==='reschedule'&&!other) cls+=' reschedule-target';
+  if(isRangeStart) cls+=' range-start';
+  if(dow===0) cls+=' sun'; if(dow===6) cls+=' sat';
+  const MAX=2; let chips='';
+  for(let i=0;i<Math.min(dayT.length,MAX);i++){
+    const t=dayT[i];
+    let cc; if(t.done) cc='chip chip-d'; else if(t.end) cc='chip chip-range'; else cc=(t.priority==='high'?'chip chip-h':'chip chip-l');
+    if(t.repeat&&t.repeat!=='none') cc+=' chip-r';
+    chips+=`<div class="${cc}">${esc(t.text)}</div>`;
+  }
+  if(dayT.length>MAX) chips+=`<div class="chip-more">+${dayT.length-MAX}</div>`;
+  return `<div class="${cls}" onclick="onCalendarClick('${str}')"><span class="dn">${dt.getDate()}</span><div class="day-chips">${chips}</div></div>`;
+}
+
+// RIGHT
+function renderRight(){
+  const isTodoMode=addAsTodo;
+  const dayT=isTodoMode?tasks.filter(t=>!t.done&&!t.due):tasks.filter(t=>taskOnDate(t,selectedDate));
+  const high=dayT.filter(t=>!t.done&&t.priority==='high');
+  const low =dayT.filter(t=>!t.done&&t.priority==='low');
+  const done=dayT.filter(t=>t.done);
+  const label=isTodoMode?'Todo':dateLabel(selectedDate);
+  const dateModeText=isTodoMode?'Todo':dateLabel(selectedDate);
+
+  let h=`
+    <div class="detail-head">
+      <div class="detail-dlabel">${label}</div>
+      <div class="detail-sub">${dayT.length}件${!isTodoMode?' · 完了 '+done.length+'件':''}</div>
+    </div>
+    <div class="add-form">
+      <input class="add-input" id="add-input" type="text" placeholder="タスクを追加..." onkeydown="if(event.key==='Enter')addTask()" />
+      <div class="date-mode-label">追加先：<span>${dateModeText}</span>（カレンダーで変更）</div>
+      <div class="form-row2">
+        <div class="prio-toggle">
+          <button id="btn-h" onclick="setPrio('high')">🔴 高</button>
+          <button id="btn-l" class="al" onclick="setPrio('low')">🔵 低</button>
+        </div>
+        <button class="todo-toggle ${addAsTodo?'active':''}" onclick="toggleTodo()">Todo</button>
+        <select class="repeat-select" id="repeat-sel" onchange="selRepeat=this.value">
+          <option value="none">繰り返しなし</option>
+          <option value="daily">毎日</option>
+          <option value="weekly">毎週</option>
+          <option value="monthly">毎月</option>
+          <option value="yearly">毎年</option>
+        </select>
+        <button class="btn-add" onclick="addTask()">追加</button>
+      </div>
+    </div>`;
+
+  if(!dayT.length){
+    h+=`<div class="detail-empty">${isTodoMode?'Todoはありません':'この日のタスクはありません'} 📭</div>`;
+  } else {
+    if(high.length){h+=`<div class="sec-label">優先度：高</div>`;h+=high.map(t=>taskHTML(t)).join('');}
+    if(low.length) {h+=`<div class="sec-label">優先度：低</div>`;h+=low.map(t=>taskHTML(t)).join('');}
+    if(done.length){h+=`<div class="sec-label">完了</div>`;h+=done.map(t=>taskHTML(t)).join('');}
+  }
+  document.getElementById('pane-right').innerHTML=h;
+  const bh=document.getElementById('btn-h'),bl=document.getElementById('btn-l');
+  if(bh)bh.className=selPriority==='high'?'ah':''; if(bl)bl.className=selPriority==='low'?'al':'';
+  const rs=document.getElementById('repeat-sel'); if(rs)rs.value=selRepeat;
+}
+
+function taskHTML(t){
+  const rl=repeatLabel(t.repeat);
+  const isRS=calMode==='reschedule'&&calModeId===t.id;
+  const rangeTxt=t.end?`${t.due}〜${t.end}`:'';
+  return `<div class="task-item ${t.priority==='high'?'ph':'pl'} ${t.done?'done':''}" onclick="openDetail('${t.id}',event)">
+    <div class="task-check" onclick="toggleDone('${t.id}',event)">
+      <svg class="chk-svg" width="10" height="10" viewBox="0 0 10 10" fill="none">
+        <polyline points="1.5,5 4,7.5 8.5,2.5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="task-body">
+      <div class="task-text">${esc(t.text)}</div>
+      ${t.note?`<div class="task-note-prev">${esc(t.note)}</div>`:''}
+      ${!t.done?`<div class="task-meta">
+        <span class="task-badge ${t.priority==='high'?'bh':'bl'}">${t.priority==='high'?'高':'低'}</span>
+        ${rangeTxt?`<span class="range-badge">📆 ${rangeTxt}</span>`:''}
+        ${rl?`<span class="repeat-badge">🔁 ${rl}</span>`:''}
+      </div>`:''}
+    </div>
+    <div class="task-acts">
+      <button class="btn-act ${isRS?'rs-active':''}" onclick="startReschedule('${t.id}',event)">📅</button>
+      <button class="btn-act del" onclick="deleteTask('${t.id}',event)">✕</button>
+    </div>
+  </div>`;
+}
+
+// Auth state change handler manages initial render
+}); // end DOMContentLoaded
+
+</body>
+</html>
