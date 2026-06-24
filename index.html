@@ -2,17 +2,27 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Todo</title>
-<!-- PWA -->
-<link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#3d5a99">
-<link rel="icon" type="image/png" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Todo">
+<script>
+// 旧PWA(Service Worker)とキャッシュの残骸を一度だけ掃除する（クリーン後は何もしない）
+(function () {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      var hadSW = regs && regs.length > 0;
+      (regs || []).forEach(function (r) { r.unregister(); });
+      if (window.caches && caches.keys) {
+        caches.keys().then(function (keys) { keys.forEach(function (k) { caches.delete(k); }); });
+      }
+      if (hadSW && !sessionStorage.getItem('sw_cleaned')) {
+        sessionStorage.setItem('sw_cleaned', '1');
+        location.reload();
+      }
+    });
+  } catch (e) {}
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -714,18 +724,6 @@ function taskHTML(t){
 
 // Auth state change handler manages initial render
 }); // end DOMContentLoaded
-
-// PWA: 旧Service Workerとキャッシュを完全除去（空白・表示崩れの再発防止）
-// ※ Service Workerは使わず、常にネットワークから最新を読み込む。
-//    ホーム画面インストールは manifest により引き続き可能。
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations()
-    .then((regs) => regs.forEach((r) => r.unregister()))
-    .catch(() => {});
-}
-if (window.caches && caches.keys) {
-  caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => {});
-}
 </script>
 
 </body>
